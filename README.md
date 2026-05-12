@@ -31,7 +31,34 @@
 | 📊 负载 | 1/5/15分钟负载、进程数 |
 | 🐧 系统 | 发行版、内核、架构、虚拟化 |
 
-## 快速部署
+## ⚡ 一键安装
+
+### 安装 Dashboard（监控面板）
+
+```bash
+bash <(curl -sL https://raw.githubusercontent.com/Misukaclaw/server-probe/main/install.sh) dashboard
+```
+
+### 安装 Agent（每台VPS上执行）
+
+```bash
+# 交互式安装
+bash <(curl -sL https://raw.githubusercontent.com/Misukaclaw/server-probe/main/install.sh) agent
+
+# 一行命令安装（无需交互）
+DASHBOARD_URL=http://你的IP:8080 SERVER_NAME="美国-01" \
+  bash <(curl -sL https://raw.githubusercontent.com/Misukaclaw/server-probe/main/install.sh) agent
+```
+
+### 卸载
+
+```bash
+bash <(curl -sL https://raw.githubusercontent.com/Misukaclaw/server-probe/main/install.sh) uninstall
+```
+
+---
+
+## 手动部署
 
 ### 1. 启动 Dashboard（一台服务器）
 
