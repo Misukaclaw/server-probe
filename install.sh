@@ -252,18 +252,15 @@ EOF
 
     service_enable probe-dashboard || return 1
 
-    local pub_ip
-    pub_ip=$(curl -s --connect-timeout 3 ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
-
     echo ""
     ok "✨ Dashboard 安装完成！"
     echo ""
-    echo -e "  ${CYAN}访问地址:${NC} http://${pub_ip}:${port}"
+    echo -e "  ${CYAN}访问地址:${NC} http://你的IP:${port}"
     echo -e "  ${CYAN}管理命令:${NC}"
     service_cmds probe-dashboard
     echo ""
     echo -e "  ${YELLOW}在每台 VPS 上安装 Agent:${NC}"
-    echo -e "  ${GREEN}bash <(curl -sL https://raw.githubusercontent.com/${REPO}/${BRANCH}/install.sh) agent http://${pub_ip}:${port} 服务器名${NC}"
+    echo -e "  ${GREEN}bash <(curl -sL https://raw.githubusercontent.com/${REPO}/${BRANCH}/install.sh) agent http://你的IP:${port} 服务器名${NC}"
 }
 
 # ============ 安装 Agent ============
@@ -383,10 +380,10 @@ case "$CMD" in
         echo ""
         echo "示例:"
         echo "  bash install.sh dashboard 8080"
-        echo "  bash install.sh agent http://1.2.3.4:8080 \"美国-01\""
+        echo "  bash install.sh agent http://1.1.1.1:8080 \"美国-01\""
         echo ""
         echo "一键远程安装:"
         echo "  bash <(curl -sL https://raw.githubusercontent.com/${REPO}/${BRANCH}/install.sh) dashboard"
-        echo "  bash <(curl -sL https://raw.githubusercontent.com/${REPO}/${BRANCH}/install.sh) agent http://IP:8080 名称"
+        echo "  bash <(curl -sL https://raw.githubusercontent.com/${REPO}/${BRANCH}/install.sh) agent http://1.1.1.1:8080 名称"
         ;;
 esac
