@@ -158,18 +158,30 @@ def collect():
 def report_loop():
     """定时上报循环"""
     import urllib.request
+    import ssl
     url = DASHBOARD_URL.rstrip('/') + '/api/report'
     print(f'📡 上报地址: {url}')
     print(f'⏱  间隔: {REPORT_INTERVAL}秒')
+    # SSL 上下文
+    ctx = ssl.create_default_context()
+    if os.environ.get('PROBE_SKIP_SSL'):
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
     while True:
         try:
             data = collect()
             payload = json.dumps(data).encode('utf-8')
             req = urllib.request.Request(url, data=payload,
-                                         headers={'Content-Type': 'application/json'},
+                                         headers={
+                                             'Content-Type': 'application/json',
+                                             'User-Agent': 'ServerProbe-Agent/1.0',
+                                         },
                                          method='POST')
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
                 pass
+        except urllib.error.HTTPError as e:
+            body = e.read().decode('utf-8', errors='replace')[:200] if e.fp else ''
+            print(f'❌ 上报失败: HTTP {e.code} {e.reason} {body}')
         except Exception as e:
             print(f'❌ 上报失败: {e}')
         time.sleep(REPORT_INTERVAL)

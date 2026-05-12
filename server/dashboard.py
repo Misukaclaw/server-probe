@@ -326,11 +326,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             try:
                 length = int(self.headers.get('Content-Length', 0))
                 body = self.rfile.read(length)
+                if not body:
+                    self._send_json({'status': 'error', 'message': 'empty body'}, 400)
+                    return
                 data = json.loads(body)
                 name = data.get('name', 'unknown')
                 with lock:
                     servers[name] = {'data': data, 'last_seen': time.time()}
                 self._send_json({'status': 'ok'})
+            except json.JSONDecodeError as e:
+                self._send_json({'status': 'error', 'message': f'invalid json: {e}'}, 400)
             except Exception as e:
                 self._send_json({'status': 'error', 'message': str(e)}, 400)
         else:
