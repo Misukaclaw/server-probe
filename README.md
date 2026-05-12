@@ -27,22 +27,11 @@
 | 🖥 CPU | 使用率、型号、核心数、温度 |
 | 💾 内存 | 使用率、已用/总量、Swap |
 | 💿 磁盘 | 各挂载点容量、使用率 |
-| 🌐 网络 | 流量统计、**实时速率** |
+| 🌐 网络 | 流量统计、实时速率 |
 | 📊 负载 | 1/5/15分钟负载、进程数 |
 | 🐧 系统 | 发行版、内核、架构、虚拟化 |
-
-## 特点
-
-- 🪶 Agent ~3MB / Dashboard ~10MB
-- 🎨 暗色主题，3秒实时刷新
-- 📱 响应式，手机/平板/桌面自适应
-- ⚡ 零依赖，仅 Python 3 标准库
-- 🚀 单文件部署，一行命令启动
-- 🔗 多服务器集中管理，在线/离线状态
-- 🏷️ 标签分组 + 排序（按CPU/内存/负载/在线状态）
-- 🔐 Token 鉴权，防止数据污染
-- 💾 可选数据持久化，重启不丢
-- 🐧 兼容 systemd / OpenRC (Alpine)
+| 🏷 标签 | 支持分组筛选（美西/亚太/数据库等） |
+| 📊 排序 | 按CPU/内存/负载/在线状态排序 |
 
 ## ⚡ 一键安装
 
@@ -58,8 +47,13 @@ bash <(curl -sL https://raw.githubusercontent.com/Misukaclaw/server-probe/main/i
 # 交互式安装
 bash <(curl -sL https://raw.githubusercontent.com/Misukaclaw/server-probe/main/install.sh) agent
 
-# 一行命令安装
-bash <(curl -sL https://raw.githubusercontent.com/Misukaclaw/server-probe/main/install.sh) agent http://1.1.1.1:8080 "美国-01"
+# 一行命令安装（无需交互）
+DASHBOARD_URL=http://1.1.1.1:8080 SERVER_NAME="美国-01" \
+  bash <(curl -sL https://raw.githubusercontent.com/Misukaclaw/server-probe/main/install.sh) agent
+
+# 带标签
+DASHBOARD_URL=http://1.1.1.1:8080 SERVER_NAME="美西-01" TAGS="美西,数据库" \
+  bash <(curl -sL https://raw.githubusercontent.com/Misukaclaw/server-probe/main/install.sh) agent
 ```
 
 ### 卸载
@@ -72,28 +66,75 @@ bash <(curl -sL https://raw.githubusercontent.com/Misukaclaw/server-probe/main/i
 
 ## 手动部署
 
-### 1. 启动 Dashboard
+### 1. 启动 Dashboard（一台服务器）
 
 ```bash
 python3 server/dashboard.py
 
-# 自定义配置
-PORT=9090 AUTH_TOKEN=your_secret PERSIST_FILE=/opt/probe/data.json python3 server/dashboard.py
+# 自定义端口
+PORT=9090 python3 server/dashboard.py
+
+# 启用鉴权
+AUTH_TOKEN=your_secret_token python3 server/dashboard.py
+
+# 启用数据持久化（重启不丢失）
+AUTH_TOKEN=your_secret_token PERSIST_FILE=/opt/server-probe/data.json python3 server/dashboard.py
+
+# Docker
+docker build -t probe-dashboard .
+docker run -d --name dashboard -p 8080:8080 \
+  -e AUTH_TOKEN=your_secret_token \
+  -e PERSIST_FILE=/data/data.json \
+  -v /opt/server-probe/data:/data \
+  --restart unless-stopped probe-dashboard
 ```
 
-### 2. 部署 Agent
+### 2. 部署 Agent（每台VPS）
 
 ```bash
-DASHBOARD_URL=http://1.1.1.1:8080 \
-SERVER_NAME="美国-01" \
-TAGS="美西,数据库" \
-AUTH_TOKEN=your_secret \
-python3 agent/agent.py
+DASHBOARD_URL=http://1.1.1.1:8080 SERVER_NAME="日本-01" python3 agent/agent.py
+
+# 启用鉴权
+AUTH_TOKEN=your_secret_token DASHBOARD_URL=http://1.1.1.1:8080 python3 agent/agent.py
+
+# 带标签
+TAGS="亚太,前端" DASHBOARD_URL=http://1.1.1.1:8080 python3 agent/agent.py
+
+# HTTPS（Cloudflare等）
+DASHBOARD_URL=https://probe.example.com AUTH_TOKEN=your_secret_token python3 agent/agent.py
+
+# 跳过SSL验证（自签证书）
+PROBE_SKIP_SSL=1 DASHBOARD_URL=https://probe.example.com python3 agent/agent.py
+
+# Docker
+cd agent && docker build -t probe-agent .
+docker run -d --name agent \
+  -e DASHBOARD_URL=http://1.1.1.1:8080 \
+  -e SERVER_NAME="日本-01" \
+  -e AUTH_TOKEN=your_secret_token \
+  -e TAGS="亚太,前端" \
+  --restart unless-stopped \
+  probe-agent
 ```
 
 ### 3. 打开面板
 
-访问 `http://1.1.1.1:8080` 即可看到所有服务器状态。
+访问 `http://你的IP:8080` 即可看到所有服务器的状态。
+
+## 特点
+
+- 🪶 Agent 内存 ~3MB，Dashboard ~10MB
+- 🎨 暗色主题，3秒实时刷新
+- 📱 响应式，手机/平板/桌面自适应
+- ⚡ 零依赖，仅 Python 3 标准库
+- 🚀 单文件部署，一行命令启动
+- 🔗 多服务器集中管理，在线/离线状态一目了然
+- 🏷 标签分组筛选（美西/亚太/数据库...）
+- 📊 按CPU/内存/负载排序
+- 🔒 Token 鉴权，防数据污染
+- 💾 数据持久化，重启不丢失
+- 🔒 防 XSS / 防 OOM
+- 🐧 兼容 Alpine/OpenRC
 
 ## 配置
 
@@ -103,9 +144,9 @@ python3 agent/agent.py
 |---------|-------|------|
 | `PORT` | 8080 | 监听端口 |
 | `OFFLINE_TIMEOUT` | 15 | 超过多少秒判定离线 |
-| `AUTH_TOKEN` | 空 | 鉴权Token，留空不鉴权 |
-| `PERSIST_FILE` | 空 | 持久化文件路径，留空不持久化 |
-| `PERSIST_INTERVAL` | 60 | 持久化间隔（秒） |
+| `AUTH_TOKEN` | 空 | 鉴权 Token（留空不鉴权） |
+| `PERSIST_FILE` | 空 | 持久化文件路径（留空不持久化） |
+| `PERSIST_INTERVAL` | 60 | 持久化间隔秒 |
 
 ### Agent
 
@@ -114,16 +155,9 @@ python3 agent/agent.py
 | `DASHBOARD_URL` | http://localhost:8080 | Dashboard地址 |
 | `SERVER_NAME` | 主机名 | 服务器显示名称 |
 | `REPORT_INTERVAL` | 3 | 上报间隔（秒） |
-| `AUTH_TOKEN` | 空 | 鉴权Token，需与Dashboard一致 |
-| `TAGS` | 空 | 标签，逗号分隔（如 `美西,数据库`） |
+| `AUTH_TOKEN` | 空 | 鉴权 Token（需与Dashboard一致） |
+| `TAGS` | 空 | 标签，逗号分隔（如 美西,数据库） |
 | `PROBE_SKIP_SSL` | 空 | 设为1跳过SSL验证 |
-
-## 安全
-
-- **鉴权**: 设置 `AUTH_TOKEN` 后，Agent 必须携带相同Token才能上报
-- **防OOM**: 限制请求体最大10KB
-- **XSS防护**: 前端所有数据经HTML转义
-- **Body校验**: 空/超长/非法JSON均被拒绝
 
 ## 系统要求
 
