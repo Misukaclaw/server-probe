@@ -213,7 +213,10 @@ install_dashboard() {
     check_python || return 1
 
     local port="${2:-$PORT}"
+    local auth_token="${AUTH_TOKEN:-}"
+    local persist="${PERSIST_FILE:-$INSTALL_DIR/data.json}"
     ask "Dashboard 监听端口" "8080" port
+    ask "鉴权 Token (留空不鉴权)" "" auth_token
     info "使用端口: $port"
 
     mkdir -p $INSTALL_DIR/server
@@ -233,6 +236,8 @@ Type=simple
 WorkingDirectory=$INSTALL_DIR/server
 ExecStart=$PYTHON $INSTALL_DIR/server/dashboard.py
 Environment=PORT=$port
+Environment=AUTH_TOKEN=$auth_token
+Environment=PERSIST_FILE=$persist
 Restart=always
 RestartSec=5
 
@@ -246,7 +251,9 @@ EOF
                 "ServerProbe Dashboard" \
                 "$INSTALL_DIR/server" \
                 "$PYTHON $INSTALL_DIR/server/dashboard.py" \
-                "export PORT=$port"
+                "export PORT=$port
+export AUTH_TOKEN=\"$auth_token\"
+export PERSIST_FILE=\"$persist\""
             ;;
     esac
 
@@ -274,9 +281,11 @@ install_agent() {
     local url="${2:-$DASHBOARD_URL}"
     local name="${3:-$SERVER_NAME}"
     local interval="${REPORT_INTERVAL:-3}"
+    local auth_token="${AUTH_TOKEN:-}"
+    local tags="${TAGS:-}"
 
     if [ -z "$url" ]; then
-        ask "Dashboard 地址 (如 http://1.2.3.4:8080)" "" url
+        ask "Dashboard 地址 (如 http://1.1.1.1:8080)" "" url
     fi
     if [ -z "$url" ]; then
         err "必须提供 Dashboard 地址"; return 1
@@ -285,6 +294,8 @@ install_agent() {
         ask "服务器名称" "$(hostname)" name
     fi
     ask "上报间隔/秒" "3" interval
+    ask "鉴权 Token (留空不鉴权)" "" auth_token
+    ask "标签 (逗号分隔，如 美西,数据库)" "" tags
 
     info "Dashboard: $url"
     info "服务器名: $name"
@@ -309,6 +320,8 @@ ExecStart=$PYTHON $INSTALL_DIR/agent/agent.py
 Environment=DASHBOARD_URL=$url
 Environment=SERVER_NAME=$name
 Environment=REPORT_INTERVAL=$interval
+Environment=AUTH_TOKEN=$auth_token
+Environment=TAGS=$tags
 Restart=always
 RestartSec=5
 
@@ -324,7 +337,9 @@ EOF
                 "$PYTHON $INSTALL_DIR/agent/agent.py" \
                 "export DASHBOARD_URL=\"$url\"
 export SERVER_NAME=\"$name\"
-export REPORT_INTERVAL=$interval"
+export REPORT_INTERVAL=$interval
+export AUTH_TOKEN=\"$auth_token\"
+export TAGS=\"$tags\""
             ;;
     esac
 
