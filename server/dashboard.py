@@ -57,14 +57,13 @@ def persist_loop():
             print(f'⚠️ 持久化失败: {e}')
 
 def cleanup_offline():
-    """后台清理离线服务器"""
+    """后台标记离线服务器（不再自动删除，由用户手动管理）"""
     while True:
         now = time.time()
         with lock:
-            offline = [k for k, v in servers.items() if now - v['last_seen'] > OFFLINE_TIMEOUT * 3]
-            for k in offline:
-                del servers[k]
-        time.sleep(60)
+            for k, v in servers.items():
+                v['online'] = now - v['last_seen'] < OFFLINE_TIMEOUT
+        time.sleep(15)
 
 # ============ 前端页面 ============
 
@@ -169,6 +168,12 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',-apple-system,Bl
 .di{padding:4px 0;border-bottom:1px solid rgba(255,255,255,.03)}
 .di:last-child{border:none}
 .di-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;font-size:11px}
+
+/* Delete button */
+.srv-del{background:none;border:1px solid var(--border);border-radius:var(--rs);padding:3px 10px;font-size:11px;color:var(--text3);cursor:pointer;transition:all .2s;margin-left:6px}
+.srv-del:hover{border-color:var(--red);color:var(--red);background:var(--red-bg)}
+.srv-del.confirm{border-color:var(--red);color:var(--red);background:var(--red-bg);font-weight:600;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
 
 /* Empty */
 .empty{text-align:center;padding:60px 20px;color:var(--text3)}
@@ -299,6 +304,7 @@ function render(data){
           <span>${esc(d.os.distro||d.os.os)}</span>
           <span>↑ ${UT(d.load.uptime)}</span>
           <span>${ago(d.timestamp)}</span>
+          <button class="srv-del" onclick="event.stopPropagation();delSrv(this,'${esc(d.name).replace(/'/g,"\\'")}')">删除</button>
         </div>
       </div>
       <div class="srv-body">
@@ -351,6 +357,24 @@ function render(data){
 function setFilter(tag){
   activeFilter=tag;
   render(allData);
+}
+
+function delSrv(btn,name){
+  if(!btn.classList.contains('confirm')){
+    btn.classList.add('confirm');
+    btn.textContent='确认?';
+    setTimeout(()=>{btn.classList.remove('confirm');btn.textContent='删除';},3000);
+    return;
+  }
+  btn.disabled=true;
+  btn.textContent='删除中...';
+  fetch('/api/server?name='+encodeURIComponent(name),{method:'DELETE'})
+    .then(r=>r.json())
+    .then(j=>{
+      if(j.status==='ok'){go();}
+      else{alert('删除失败: '+j.message);btn.classList.remove('confirm');btn.textContent='删除';btn.disabled=false;}
+    })
+    .catch(e=>{alert('请求失败: '+e);btn.classList.remove('confirm');btn.textContent='删除';btn.disabled=false;});
 }
 
 async function go(){
@@ -429,10 +453,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
         else:
             self.send_response(404); self.end_headers()
 
+    def do_DELETE(self):
+        path = urlparse(self.path).path
+        if path == '/api/server':
+            # 鉴权
+            if AUTH_TOKEN:
+                auth = self.headers.get('Authorization', '')
+                expected = f'Bearer {AUTH_TOKEN}'
+                if auth != expected:
+                    self._send_json({'status': 'error', 'message': 'unauthorized'}, 403)
+                    return
+            qs = parse_qs(urlparse(self.path).query)
+            name = qs.get('name', [None])[0]
+            if not name:
+                self._send_json({'status': 'error', 'message': 'missing name parameter'}, 400)
+                return
+            with lock:
+                if name in servers:
+                    del servers[name]
+                    self._send_json({'status': 'ok', 'message': f'server {name} deleted'})
+                else:
+                    self._send_json({'status': 'error', 'message': f'server {name} not found'}, 404)
+        else:
+            self.send_response(404); self.end_headers()
+
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
         self.end_headers()
 
