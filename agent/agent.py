@@ -117,8 +117,9 @@ def get_network_info():
     return interfaces
 
 def calc_network_speed():
-    """计算网络速率"""
+    """计算网络速率（字节/秒）"""
     global _prev_net, _net_speed
+    now = time.time()
     netdev = read_file('/proc/net/dev')
     if not netdev:
         return
@@ -128,14 +129,17 @@ def calc_network_speed():
         if len(p) >= 10 and p[0].rstrip(':') != 'lo':
             cur[p[0].rstrip(':')] = {'rx': int(p[1]), 'tx': int(p[9])}
     if _prev_net:
+        elapsed = now - _prev_net.get('__time__', now)
+        if elapsed <= 0:
+            elapsed = REPORT_INTERVAL
         _net_speed = {}
         for iface, vals in cur.items():
             if iface in _prev_net:
                 _net_speed[iface] = {
-                    'rx_speed': max(0, vals['rx'] - _prev_net[iface]['rx']),
-                    'tx_speed': max(0, vals['tx'] - _prev_net[iface]['tx']),
+                    'rx_speed': max(0, (vals['rx'] - _prev_net[iface]['rx']) / elapsed),
+                    'tx_speed': max(0, (vals['tx'] - _prev_net[iface]['tx']) / elapsed),
                 }
-    _prev_net = cur
+    _prev_net = {**cur, '__time__': now}
 
 def get_load_info():
     load = {'load_1': 0, 'load_5': 0, 'load_15': 0, 'uptime': 0, 'processes': 0}

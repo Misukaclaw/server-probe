@@ -20,6 +20,7 @@ AUTH_TOKEN = os.environ.get('AUTH_TOKEN', '')  # 留空则不鉴权
 PERSIST_FILE = os.environ.get('PERSIST_FILE', '')  # 留空则不持久化，如 /opt/server-probe/data.json
 PERSIST_INTERVAL = int(os.environ.get('PERSIST_INTERVAL', '60'))  # 持久化间隔秒
 MAX_BODY_SIZE = 10240  # 10KB，防OOM
+GHOST_TIMEOUT_DAYS = int(os.environ.get('GHOST_TIMEOUT_DAYS', '30'))  # 超过N天未上报自动清理幽灵条目，0=不清理
 # ==============================
 
 servers = {}
@@ -33,8 +34,11 @@ def load_persist():
         with open(PERSIST_FILE, 'r') as f:
             data = json.load(f)
         with lock:
-            servers.update(data)
-        print(f'📂 已加载持久化数据: {len(data)} 台服务器')
+            for name, srv in data.items():
+                # 重置 last_seen 为 0，避免重启后短暂误判为在线
+                srv['last_seen'] = 0
+                servers[name] = srv
+        print(f'📂 已加载持久化数据: {len(data)} 台服务器 (last_seen 已重置)')
     except FileNotFoundError:
         pass
     except Exception as e:
@@ -56,14 +60,21 @@ def persist_loop():
         except Exception as e:
             print(f'⚠️ 持久化失败: {e}')
 
-def cleanup_offline():
-    """后台标记离线服务器（不再自动删除，由用户手动管理）"""
+def cleanup_ghosts():
+    """后台清理幽灵条目（超过GHOST_TIMEOUT_DAYS天未上报的旧机器）"""
+    if GHOST_TIMEOUT_DAYS <= 0:
+        return
+    threshold = GHOST_TIMEOUT_DAYS * 86400
     while True:
         now = time.time()
         with lock:
-            for k, v in servers.items():
-                v['online'] = now - v['last_seen'] < OFFLINE_TIMEOUT
-        time.sleep(15)
+            ghosts = [k for k, v in servers.items()
+                      if v['last_seen'] > 0 and now - v['last_seen'] > threshold]
+            for k in ghosts:
+                del servers[k]
+        if ghosts:
+            print(f'👻 清理 {len(ghosts)} 个幽灵条目 (超过{GHOST_TIMEOUT_DAYS}天未上报): {ghosts}')
+        time.sleep(3600)  # 每小时检查一次
 
 # ============ 前端页面 ============
 
@@ -73,6 +84,7 @@ HTML_PAGE = '''<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ServerProbe</title>
+<meta name="probe-token" content="__AUTH_TOKEN__">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -229,6 +241,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',-apple-system,Bl
 const R=3;
 let allData={};
 let activeFilter='__all__';
+const TOKEN=document.querySelector('meta[name="probe-token"]').content;
 
 function F(b){if(!b)return'0 B';const u=['B','KB','MB','GB','TB'];const i=Math.min(Math.floor(Math.log(b)/Math.log(1024)),u.length-1);return(b/Math.pow(1024,i)).toFixed(i?1:0)+' '+u[i]}
 function FS(b){if(!b||b<=0)return'0 B/s';const u=['B/s','KB/s','MB/s','GB/s'];const i=Math.min(Math.floor(Math.log(b)/Math.log(1024)),u.length-1);return(b/Math.pow(1024,i)).toFixed(i?1:0)+' '+u[i]}
@@ -237,6 +250,12 @@ function BC(p){return p<60?'var(--green)':p<85?'var(--yellow)':'var(--red)'}
 function TC(p){return p<60?'tg':p<85?'ty':'tr'}
 function ago(ts){const s=Math.floor(Date.now()/1000-ts);if(s<60)return s+'秒前';if(s<3600)return Math.floor(s/60)+'分钟前';return Math.floor(s/3600)+'小时前'}
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
+function apiUrl(path){
+  if(!TOKEN)return path;
+  const sep=path.includes('?')?'&':'?';
+  return path+sep+'token='+encodeURIComponent(TOKEN);
+}
 
 function render(data){
   const servers=Object.values(data);
@@ -256,9 +275,9 @@ function render(data){
   // Filter pills (tags)
   const allTags=new Set();
   servers.forEach(s=>{(s.data.tags||[]).forEach(t=>allTags.add(t))});
-  let fh=`<span class="filter-pill ${activeFilter==='__all__'?'active':''}" onclick="setFilter('__all__')">全部</span>`;
+  let fh=`<span class="filter-pill ${activeFilter==='__all__'?'active':''}" data-tag="__all__">全部</span>`;
   [...allTags].sort().forEach(t=>{
-    fh+=`<span class="filter-pill ${activeFilter===t?'active':''}" onclick="setFilter('${esc(t)}')">${esc(t)}</span>`;
+    fh+=`<span class="filter-pill ${activeFilter===t?'active':''}" data-tag="${esc(t)}">${esc(t)}</span>`;
   });
   document.getElementById('filter-bar').innerHTML=fh;
 
@@ -304,7 +323,7 @@ function render(data){
           <span>${esc(d.os.distro||d.os.os)}</span>
           <span>↑ ${UT(d.load.uptime)}</span>
           <span>${ago(d.timestamp)}</span>
-          <button class="srv-del" onclick="event.stopPropagation();delSrv(this,'${esc(d.name).replace(/'/g,"\\'")}')">删除</button>
+          <button class="srv-del" data-name="${esc(d.name)}" onclick="event.stopPropagation();delSrv(this)">删除</button>
         </div>
       </div>
       <div class="srv-body">
@@ -359,7 +378,8 @@ function setFilter(tag){
   render(allData);
 }
 
-function delSrv(btn,name){
+function delSrv(btn){
+  const name=btn.dataset.name;
   if(!btn.classList.contains('confirm')){
     btn.classList.add('confirm');
     btn.textContent='确认?';
@@ -368,7 +388,7 @@ function delSrv(btn,name){
   }
   btn.disabled=true;
   btn.textContent='删除中...';
-  fetch('/api/server?name='+encodeURIComponent(name),{method:'DELETE'})
+  fetch(apiUrl('/api/server?name='+encodeURIComponent(name)),{method:'DELETE'})
     .then(r=>r.json())
     .then(j=>{
       if(j.status==='ok'){go();}
@@ -379,9 +399,16 @@ function delSrv(btn,name){
 
 async function go(){
   try{
-    const r=await fetch('/api/servers');allData=await r.json();render(allData);
+    const r=await fetch(apiUrl('/api/servers'));allData=await r.json();render(allData);
   }catch(e){console.error(e)}
 }
+
+// 事件委托：filter pills
+document.getElementById('filter-bar').addEventListener('click',e=>{
+  const pill=e.target.closest('.filter-pill');
+  if(pill)setFilter(pill.dataset.tag);
+});
+
 document.getElementById('ri').textContent=R;
 go();setInterval(go,R*1000);
 </script>
@@ -407,8 +434,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'text/html; charset=utf-8')
             self.send_header('Cache-Control', 'no-cache')
             self.end_headers()
-            self.wfile.write(HTML_PAGE.encode('utf-8'))
+            html = HTML_PAGE.replace('__AUTH_TOKEN__', AUTH_TOKEN or '')
+            self.wfile.write(html.encode('utf-8'))
         elif path == '/api/servers':
+            # GET 鉴权：支持 query param token（方便浏览器访问）
+            if AUTH_TOKEN:
+                token = parse_qs(urlparse(self.path).query).get('token', [''])[0]
+                if token != AUTH_TOKEN:
+                    self._send_json({'error': 'unauthorized'}, 403)
+                    return
             now = time.time()
             result = {}
             with lock:
@@ -456,11 +490,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_DELETE(self):
         path = urlparse(self.path).path
         if path == '/api/server':
-            # 鉴权
+            # 鉴权：支持 Bearer header 或 query param token
             if AUTH_TOKEN:
                 auth = self.headers.get('Authorization', '')
                 expected = f'Bearer {AUTH_TOKEN}'
-                if auth != expected:
+                token = parse_qs(urlparse(self.path).query).get('token', [''])[0]
+                if auth != expected and token != AUTH_TOKEN:
                     self._send_json({'status': 'error', 'message': 'unauthorized'}, 403)
                     return
             qs = parse_qs(urlparse(self.path).query)
@@ -496,7 +531,7 @@ if __name__ == '__main__':
     load_persist()
 
     # 启动后台线程
-    threading.Thread(target=cleanup_offline, daemon=True).start()
+    threading.Thread(target=cleanup_ghosts, daemon=True).start()
     if PERSIST_FILE:
         threading.Thread(target=persist_loop, daemon=True).start()
 
@@ -504,6 +539,7 @@ if __name__ == '__main__':
 ⚡ ServerProbe Dashboard 启动
    地址: http://0.0.0.0:{PORT}
    离线判定: {OFFLINE_TIMEOUT}秒
+   幽灵清理: {f"{GHOST_TIMEOUT_DAYS}天" if GHOST_TIMEOUT_DAYS > 0 else "关闭"}
    鉴权: {"已启用 ✓" if AUTH_TOKEN else "未启用"}
    持久化: {PERSIST_FILE or "未启用"}
 
