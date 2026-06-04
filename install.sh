@@ -45,9 +45,9 @@ check_root() {
 
 check_python() {
     if command -v python3 &>/dev/null; then
-        PYTHON=python3
+        PYTHON="$(command -v python3)"
     elif command -v python &>/dev/null; then
-        PYTHON=python
+        PYTHON="$(command -v python)"
     else
         warn "未找到 Python3，正在安装..."
         if command -v apk &>/dev/null; then
@@ -62,7 +62,7 @@ check_python() {
             err "无法自动安装 Python3，请手动安装后重试"
             return 1
         fi
-        PYTHON=python3
+        PYTHON="$(command -v python3)"
     fi
     ok "Python: $($PYTHON --version 2>&1)"
 }
@@ -129,14 +129,26 @@ service_stop_systemd() {
 
 create_openrc_script() {
     local name="$1" description="$2" workdir="$3" exec_start="$4" env_vars="$5"
+    local command_bin="$exec_start"
+    local command_args=""
+    if [[ "$exec_start" == *" "* ]]; then
+        command_bin="${exec_start%% *}"
+        command_args="${exec_start#* }"
+    fi
+    touch "/var/log/$name.log" "/var/log/$name.err"
+    chmod 644 "/var/log/$name.log" "/var/log/$name.err"
     cat > "/etc/init.d/$name" << EOF
 #!/sbin/openrc-run
 
 description="$description"
-command="$exec_start"
+command="$command_bin"
+command_args="$command_args"
 command_background=yes
 pidfile="/run/$name.pid"
-start_stop_daemon_args="--make-pidfile --chdir $workdir"
+directory="$workdir"
+start_stop_daemon_args="--make-pidfile"
+output_log="/var/log/$name.log"
+error_log="/var/log/$name.err"
 $env_vars
 
 depend() {
@@ -150,12 +162,18 @@ EOF
 service_enable_openrc() {
     local name="$1"
     rc-update add "$name" default >/dev/null 2>&1
+    rc-service "$name" stop >/dev/null 2>&1 || true
+    rc-service "$name" zap >/dev/null 2>&1 || true
     rc-service "$name" start
     sleep 1
     if rc-service "$name" status >/dev/null 2>&1; then
         ok "$name 服务已启动"
     else
-        err "$name 服务启动失败，查看日志: cat /var/log/$name.log"
+        err "$name 服务启动失败，查看日志:"
+        echo "    tail -n 50 /var/log/$name.log"
+        echo "    tail -n 50 /var/log/$name.err"
+        [ -s "/var/log/$name.log" ] && tail -n 20 "/var/log/$name.log"
+        [ -s "/var/log/$name.err" ] && tail -n 20 "/var/log/$name.err"
         return 1
     fi
 }
@@ -200,6 +218,7 @@ service_cmds() {
             echo "    rc-service $name status     # 查看状态"
             echo "    rc-service $name restart    # 重启"
             echo "    rc-service $name stop       # 停止"
+            echo "    tail -f /var/log/$name.log  # 查看日志"
             ;;
     esac
 }
