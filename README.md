@@ -1,6 +1,6 @@
 # ⚡ ServerProbe - 轻量级多服务器探针
 
-> 多VPS集中监控 | 零依赖 | 美观暗色UI | 低资源占用
+> 多VPS集中监控 | 零依赖 | 状态墙 UI | 告警与探测 | 低资源占用
 
 ## 架构
 
@@ -32,6 +32,10 @@
 | 🐧 系统 | 发行版、内核、架构、虚拟化 |
 | 🏷 标签 | 支持分组筛选（美西/亚太/数据库等） |
 | 📊 排序 | 按CPU/内存/负载/在线状态排序 |
+| 🧭 稳定性 | 90 天日级状态轨道、近 7 天小时级数据 |
+| 🔔 告警 | 上下线、CPU/内存/磁盘阈值，支持 Webhook / Telegram |
+| 📡 探测 | Agent 执行 ICMP/TCP/HTTP 探测，保留近 7 天历史 |
+| 📝 节点管理 | 面板覆盖展示名、备注、分组、隐藏和排序权重 |
 
 ## ⚡ 一键安装
 
@@ -135,6 +139,9 @@ docker run -d --name agent \
 - 💾 数据持久化，重启不丢失
 - 🔒 防 XSS / 防 OOM
 - 🐧 兼容 Alpine/OpenRC
+- 🔔 Webhook / Telegram 告警
+- 📡 Agent 侧 Ping/TCP/HTTP 探测任务
+- 🧭 90 天稳定性状态墙
 
 ## 配置
 
@@ -147,6 +154,17 @@ docker run -d --name agent \
 | `AUTH_TOKEN` | 空 | 鉴权 Token（留空不鉴权） |
 | `PERSIST_FILE` | 空 | 持久化文件路径（留空不持久化） |
 | `PERSIST_INTERVAL` | 60 | 持久化间隔秒 |
+| `STABILITY_SAMPLE_INTERVAL` | 60 | 稳定性采样间隔秒 |
+| `STABILITY_RETENTION_DAYS` | 90 | 稳定性保留天数 |
+| `PING_HISTORY_DAYS` | 7 | 探测历史保留天数 |
+| `ALERT_CPU` | 90 | CPU 告警阈值百分比 |
+| `ALERT_MEM` | 90 | 内存告警阈值百分比 |
+| `ALERT_DISK` | 90 | 磁盘告警阈值百分比 |
+| `ALERT_SUSTAINED_SECONDS` | 300 | 资源超过阈值持续多久后告警 |
+| `ALERT_COOLDOWN` | 300 | 同类告警冷却秒数 |
+| `NOTIFY_WEBHOOK_URL` | 空 | 告警 Webhook 地址 |
+| `TELEGRAM_BOT_TOKEN` | 空 | Telegram Bot Token |
+| `TELEGRAM_CHAT_ID` | 空 | Telegram Chat ID |
 
 ### Agent
 
@@ -155,9 +173,19 @@ docker run -d --name agent \
 | `DASHBOARD_URL` | http://localhost:8080 | Dashboard地址 |
 | `SERVER_NAME` | 主机名 | 服务器显示名称 |
 | `REPORT_INTERVAL` | 3 | 上报间隔（秒） |
+| `BASIC_INFO_INTERVAL` | 300 | 基础信息上报间隔（秒） |
 | `AUTH_TOKEN` | 空 | 鉴权 Token（需与Dashboard一致） |
 | `TAGS` | 空 | 标签，逗号分隔（如 美西,数据库） |
 | `PROBE_SKIP_SSL` | 空 | 设为1跳过SSL验证 |
+
+## 新接口
+
+| 接口 | 说明 |
+|------|------|
+| `POST /api/server/meta` | 更新节点展示名、备注、分组、隐藏状态和排序权重 |
+| `GET /api/ping-tasks` | 读取探测任务和历史 |
+| `POST /api/ping-task` | 新增或更新探测任务 |
+| `DELETE /api/ping-task?id=...` | 删除探测任务 |
 
 ## 系统要求
 

@@ -234,6 +234,12 @@ install_dashboard() {
     local port="${2:-$PORT}"
     local auth_token="${AUTH_TOKEN:-}"
     local persist="${PERSIST_FILE:-$INSTALL_DIR/data.json}"
+    local notify_webhook_url="${NOTIFY_WEBHOOK_URL:-}"
+    local telegram_bot_token="${TELEGRAM_BOT_TOKEN:-}"
+    local telegram_chat_id="${TELEGRAM_CHAT_ID:-}"
+    local alert_cpu="${ALERT_CPU:-90}"
+    local alert_mem="${ALERT_MEM:-90}"
+    local alert_disk="${ALERT_DISK:-90}"
     ask "Dashboard 监听端口" "8080" port
     ask "鉴权 Token (留空不鉴权)" "" auth_token
     info "使用端口: $port"
@@ -257,6 +263,12 @@ ExecStart=$PYTHON $INSTALL_DIR/server/dashboard.py
 Environment=PORT=$port
 Environment=AUTH_TOKEN=$auth_token
 Environment=PERSIST_FILE=$persist
+Environment=NOTIFY_WEBHOOK_URL=$notify_webhook_url
+Environment=TELEGRAM_BOT_TOKEN=$telegram_bot_token
+Environment=TELEGRAM_CHAT_ID=$telegram_chat_id
+Environment=ALERT_CPU=$alert_cpu
+Environment=ALERT_MEM=$alert_mem
+Environment=ALERT_DISK=$alert_disk
 Restart=always
 RestartSec=5
 
@@ -272,7 +284,13 @@ EOF
                 "$PYTHON $INSTALL_DIR/server/dashboard.py" \
                 "export PORT=$port
 export AUTH_TOKEN=\"$auth_token\"
-export PERSIST_FILE=\"$persist\""
+export PERSIST_FILE=\"$persist\"
+export NOTIFY_WEBHOOK_URL=\"$notify_webhook_url\"
+export TELEGRAM_BOT_TOKEN=\"$telegram_bot_token\"
+export TELEGRAM_CHAT_ID=\"$telegram_chat_id\"
+export ALERT_CPU=\"$alert_cpu\"
+export ALERT_MEM=\"$alert_mem\"
+export ALERT_DISK=\"$alert_disk\""
             ;;
     esac
 
@@ -300,6 +318,7 @@ install_agent() {
     local url="${2:-$DASHBOARD_URL}"
     local name="${3:-$SERVER_NAME}"
     local interval="${REPORT_INTERVAL:-3}"
+    local basic_interval="${BASIC_INFO_INTERVAL:-300}"
     local auth_token="${AUTH_TOKEN:-}"
     local tags="${TAGS:-}"
 
@@ -339,6 +358,7 @@ ExecStart=$PYTHON $INSTALL_DIR/agent/agent.py
 Environment=DASHBOARD_URL=$url
 Environment=SERVER_NAME=$name
 Environment=REPORT_INTERVAL=$interval
+Environment=BASIC_INFO_INTERVAL=$basic_interval
 Environment=AUTH_TOKEN=$auth_token
 Environment=TAGS=$tags
 Restart=always
@@ -357,6 +377,7 @@ EOF
                 "export DASHBOARD_URL=\"$url\"
 export SERVER_NAME=\"$name\"
 export REPORT_INTERVAL=$interval
+export BASIC_INFO_INTERVAL=$basic_interval
 export AUTH_TOKEN=\"$auth_token\"
 export TAGS=\"$tags\""
             ;;
